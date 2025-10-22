@@ -18,6 +18,8 @@ import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 
 @ApplicationScoped
 public class ConfigurationService {
@@ -78,12 +80,48 @@ public class ConfigurationService {
         mapper.writerWithDefaultPrettyPrinter().writeValue(new File(fileName), this.config);
     }
 
+    private final Map<String, HikariDataSource> dsCache = new ConcurrentHashMap<>();
+
     public DataSource getDataSource(AdminSource source) {
+        String name = source.getName();
+        if (name == null || name.isBlank()) {
+            name = source.getUrl();
+        }
+
+        HikariDataSource existing = dsCache.get(name);
+        if (existing != null) {
+            // reutilizar si los detalles no cambiaron
+            if (Objects.equals(existing.getJdbcUrl(), source.getUrl())
+                    && Objects.equals(existing.getUsername(), source.getUsername())
+                    && Objects.equals(existing.getPassword(), source.getPassword())) {
+                return existing;
+            } else {
+                // cerrar y eliminar si cambió la configuración
+                try {
+                    existing.close();
+                } catch (Exception ignored) {}
+                dsCache.remove(name);
+            }
+        }
+
         HikariDataSource ds = new HikariDataSource();
+        ds.setPoolName("admintool-" + name);
         ds.setJdbcUrl(source.getUrl());
         ds.setUsername(source.getUsername());
         ds.setPassword(source.getPassword());
 
+        // valores por defecto para creación rápida
+        ds.setMaximumPoolSize(1);
+        ds.setMinimumIdle(0);
+        ds.setAutoCommit(true);
+        //ds.setConnectionTimeout(1000);       // 1s
+        //ds.setValidationTimeout(1000);       // 1s
+        ds.setInitializationFailTimeout(0);  // no fallar al iniciar
+        ds.setIdleTimeout(60_000);          // 1 min
+        ds.setMaxLifetime(300_000);         // 5 min
+
+        dsCache.put(name, ds);
         return ds;
     }
+
 }

@@ -40,4 +40,19 @@ public class SetupCollectionResource {
         }
     }
 
+    @GET
+    @Path("/source/{id}/table/{name}")
+    public DbTable getTable(@PathParam("id") String sourceId, @PathParam("name") String tableName) throws SQLException {
+        AdminSource source = config.getConfigInstances().getSources().stream()
+                .filter(x -> sourceId.equals(x.getName()))
+                .findFirst()
+                .orElseThrow(); // NotFoundException
+        // source != null by force
+        try (Connection conn = config.getDataSource(source).getConnection()) {
+            return dbService.getTableWithColumns(conn, tableName);
+        }
+    }
+
+
+
 }
